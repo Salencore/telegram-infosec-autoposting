@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -187,8 +188,12 @@ def send_telegram_messages(
             data=payload,
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Telegram API error {exc.code}: {detail}") from exc
         if not data.get("ok"):
             raise RuntimeError(f"Telegram API error: {data}")
         message_ids.append(int(data["result"]["message_id"]))

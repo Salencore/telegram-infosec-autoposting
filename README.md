@@ -75,7 +75,7 @@ docker compose logs -f
 ```env
 CONTENT_SOURCE=openrouter
 OPENROUTER_API_KEY=ваш_openrouter_api_key
-OPENROUTER_MODEL=google/gemini-2.5-flash
+OPENROUTER_MODEL=tencent/hy3:free
 ```
 
 Можно выбрать другую модель из каталога OpenRouter. Для бесплатных моделей обычно используется суффикс `:free`, если модель доступна в free-варианте.

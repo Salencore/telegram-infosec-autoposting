@@ -56,7 +56,7 @@ class Settings:
             autopublish_minute=int(os.getenv("AUTOPUBLISH_MINUTE", "0")),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
-            openrouter_model=os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash"),
+            openrouter_model=os.getenv("OPENROUTER_MODEL", "tencent/hy3:free"),
             content_source=os.getenv("CONTENT_SOURCE", "static"),
         )
 

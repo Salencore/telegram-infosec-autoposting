@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 
 from autoposter.content_plan import CalendarEntry
-from autoposter.generator import build_user_prompt
+from autoposter.generator import RESPONSE_SCHEMA, build_user_prompt
 
 
 def generate_openrouter_post(
@@ -28,7 +28,14 @@ def generate_openrouter_post(
         ],
         "temperature": 0.9,
         "max_tokens": 2500,
-        "response_format": {"type": "json_object"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "telegram_infosec_post",
+                "strict": False,
+                "schema": RESPONSE_SCHEMA,
+            },
+        },
     }
     request = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",

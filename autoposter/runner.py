@@ -13,6 +13,7 @@ from autoposter.config import Settings
 from autoposter.content_plan import find_entry, parse_plan, parse_target_date
 from autoposter.gemini import generate_gemini_post
 from autoposter.generator import generate_post
+from autoposter.openrouter import generate_openrouter_post
 from autoposter.prompt import extract_system_prompt
 from autoposter.static_posts import load_static_post, render_static_post
 
@@ -83,6 +84,18 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
         result = generate_gemini_post(
             settings.gemini_api_key,
             settings.gemini_model,
+            system_prompt,
+            entry,
+            full_plan,
+        )
+        validate_result(result)
+        post_text = build_telegram_text(result)
+    elif settings.content_source == "openrouter":
+        full_plan = settings.content_plan_path.read_text(encoding="utf-8")
+        system_prompt = extract_system_prompt(settings.prompt_path)
+        result = generate_openrouter_post(
+            settings.openrouter_api_key,
+            settings.openrouter_model,
             system_prompt,
             entry,
             full_plan,

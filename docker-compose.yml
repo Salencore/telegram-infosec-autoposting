@@ -1,0 +1,11 @@
+services:
+  infosec-autoposter:
+    build: .
+    container_name: infosec-autoposter
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./state:/app/state
+      - ./content-plan-infosec.md:/app/content-plan-infosec.md:ro
+      - ./docs:/app/docs:ro

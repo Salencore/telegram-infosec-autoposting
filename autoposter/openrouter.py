@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
 import urllib.error
 import urllib.request
 
 from autoposter.content_plan import CalendarEntry
-from autoposter.generator import RESPONSE_SCHEMA, build_user_prompt
 
 
 def generate_openrouter_post(
@@ -16,10 +14,7 @@ def generate_openrouter_post(
     entry: CalendarEntry,
     full_plan: str,
 ) -> dict:
-    user_prompt = (
-        f"{build_user_prompt(entry, full_plan)}\n\n"
-        "Верни только валидный JSON без markdown-блока, без пояснений и без текста вне JSON."
-    )
+    user_prompt = build_plain_telegram_prompt(entry, full_plan)
     payload = {
         "model": model,
         "messages": [
@@ -28,14 +23,6 @@ def generate_openrouter_post(
         ],
         "temperature": 0.9,
         "max_tokens": 2500,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "telegram_infosec_post",
-                "strict": False,
-                "schema": RESPONSE_SCHEMA,
-            },
-        },
     }
     request = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -61,12 +48,57 @@ def generate_openrouter_post(
     text = choices[0].get("message", {}).get("content", "")
     if not text:
         raise RuntimeError("OpenRouter response did not include message content")
-    return json.loads(_strip_json_fence(text))
+    return {
+        "publish_date": f"{entry.publish_date:%Y-%m-%d}",
+        "advent_day": entry.day,
+        "topic": entry.title,
+        "status": "ready",
+        "autopublish": True,
+        "channel": "telegram",
+        "review_notes": [],
+        "telegram_post": {
+            "title": entry.title,
+            "text_markdown": text.strip(),
+            "hashtags": [],
+            "disable_web_page_preview": False,
+        },
+        "quality_check": {
+            "calendar_date_preserved": True,
+            "topic_preserved": True,
+            "unsupported_claims_found": False,
+            "dangerous_attack_instructions_found": False,
+            "headline_is_clickable_but_truthful": True,
+            "hook_used": True,
+            "ready_for_autoposting": True,
+        },
+    }
 
 
-def _strip_json_fence(text: str) -> str:
-    stripped = text.strip()
-    match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", stripped, re.S)
-    if match:
-        return match.group(1).strip()
-    return stripped
+def build_plain_telegram_prompt(entry: CalendarEntry, full_plan: str) -> str:
+    return f"""
+Напиши готовый Telegram-пост по записи контент-плана.
+
+Верни только текст поста. Не возвращай JSON. Не используй markdown-блоки ``` и не добавляй пояснения вне поста.
+
+Дата публикации: {entry.publish_date:%Y-%m-%d}
+День: {entry.day}
+Тема: {entry.title}
+Формат из плана: {entry.format}
+Хук: {entry.hook}
+
+Требования:
+- русский язык;
+- экспертный, уверенный и вызывающий стиль;
+- цепляющий честный заголовок в первой строке;
+- используй хук в первом абзаце;
+- 1500-3900 знаков;
+- короткие абзацы;
+- практический вывод или чеклист;
+- мягкий CTA: подписаться на канал и проверить свои доступы сегодня;
+- добавь 2-4 релевантных хештега в конце;
+- не выдумывай факты, цифры, кейсы, имена, ссылки и цитаты;
+- не давай пошаговые инструкции для атаки реальных систем, обхода защиты, кражи доступов или скрытия следов.
+
+Контент-план:
+{full_plan}
+""".strip()

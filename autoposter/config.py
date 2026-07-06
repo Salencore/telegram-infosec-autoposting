@@ -27,10 +27,12 @@ class Settings:
     default_timezone: str
     content_plan_path: Path
     prompt_path: Path
+    posts_path: Path
     state_path: Path
     autopublish_hour: int
     autopublish_minute: int
     openai_model: str
+    content_source: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -42,19 +44,21 @@ class Settings:
             default_timezone=os.getenv("DEFAULT_TIMEZONE", "Europe/Moscow"),
             content_plan_path=Path(os.getenv("CONTENT_PLAN_PATH", "content-plan-infosec.md")),
             prompt_path=Path(os.getenv("PROMPT_PATH", "docs/autoposting-prompt.md")),
+            posts_path=Path(os.getenv("POSTS_PATH", "posts")),
             state_path=Path(os.getenv("STATE_PATH", "state/published.json")),
             autopublish_hour=int(os.getenv("AUTOPUBLISH_HOUR", "9")),
             autopublish_minute=int(os.getenv("AUTOPUBLISH_MINUTE", "0")),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
+            content_source=os.getenv("CONTENT_SOURCE", "static"),
         )
 
     def validate_for_generation(self) -> None:
         missing = []
-        if not self.openai_api_key:
+        if self.content_source == "openai" and not self.openai_api_key:
             missing.append("OPENAI_API_KEY")
         if not self.content_plan_path.exists():
             missing.append(f"CONTENT_PLAN_PATH ({self.content_plan_path})")
-        if not self.prompt_path.exists():
+        if self.content_source == "openai" and not self.prompt_path.exists():
             missing.append(f"PROMPT_PATH ({self.prompt_path})")
         if missing:
             raise RuntimeError("Missing required settings: " + ", ".join(missing))

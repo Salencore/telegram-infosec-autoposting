@@ -7,5 +7,6 @@ services:
       - .env
     volumes:
       - ./state:/app/state
+      - ./posts:/app/posts:ro
       - ./content-plan-infosec.md:/app/content-plan-infosec.md:ro
       - ./docs:/app/docs:ro

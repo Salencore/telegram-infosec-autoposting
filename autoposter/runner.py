@@ -13,6 +13,7 @@ from autoposter.config import Settings
 from autoposter.content_plan import find_entry, parse_plan, parse_target_date
 from autoposter.generator import generate_post
 from autoposter.prompt import extract_system_prompt
+from autoposter.static_posts import load_static_post, render_static_post
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -61,19 +62,23 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
         logger.info("No content-plan entry for %s", target_date)
         return
 
-    logger.info("Generating post for day %s: %s", entry.day, entry.title)
-    full_plan = settings.content_plan_path.read_text(encoding="utf-8")
-    system_prompt = extract_system_prompt(settings.prompt_path)
-    result = generate_post(
-        settings.openai_api_key,
-        settings.openai_model,
-        system_prompt,
-        entry,
-        full_plan,
-    )
+    logger.info("Preparing post for day %s: %s", entry.day, entry.title)
+    result = None
+    if settings.content_source == "openai":
+        full_plan = settings.content_plan_path.read_text(encoding="utf-8")
+        system_prompt = extract_system_prompt(settings.prompt_path)
+        result = generate_post(
+            settings.openai_api_key,
+            settings.openai_model,
+            system_prompt,
+            entry,
+            full_plan,
+        )
+        validate_result(result)
+        post_text = build_telegram_text(result)
+    else:
+        post_text = load_static_post(entry, settings.posts_path) or render_static_post(entry)
 
-    validate_result(result)
-    post_text = build_telegram_text(result)
     if dry_run:
         print(post_text)
         return
@@ -82,7 +87,7 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
         settings.telegram_bot_token,
         settings.telegram_channel_id,
         split_telegram_text(post_text),
-        disable_web_page_preview=bool(result.get("telegram_post", {}).get("disable_web_page_preview", False)),
+        disable_web_page_preview=bool(result and result.get("telegram_post", {}).get("disable_web_page_preview", False)),
     )
     state.setdefault("published", {})[str(target_date)] = {
         "day": entry.day,

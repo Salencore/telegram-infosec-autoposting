@@ -31,8 +31,10 @@ class Settings:
     prompt_path: Path
     posts_path: Path
     state_path: Path
+    image_output_dir: Path
     autopublish_hour: int
     autopublish_minute: int
+    autopublish_interval_hours: int
     openai_model: str
     gemini_model: str
     openrouter_model: str
@@ -52,8 +54,10 @@ class Settings:
             prompt_path=Path(os.getenv("PROMPT_PATH", "docs/autoposting-prompt.md")),
             posts_path=Path(os.getenv("POSTS_PATH", "posts")),
             state_path=Path(os.getenv("STATE_PATH", "state/published.json")),
+            image_output_dir=Path(os.getenv("IMAGE_OUTPUT_DIR", "state/images")),
             autopublish_hour=int(os.getenv("AUTOPUBLISH_HOUR", "9")),
             autopublish_minute=int(os.getenv("AUTOPUBLISH_MINUTE", "0")),
+            autopublish_interval_hours=int(os.getenv("AUTOPUBLISH_INTERVAL_HOURS", "12")),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "tencent/hy3:free"),

@@ -14,6 +14,7 @@ from autoposter.config import Settings
 from autoposter.content_plan import find_entry, parse_plan, parse_target_date
 from autoposter.gemini import generate_gemini_post
 from autoposter.generator import generate_post
+from autoposter.images import build_post_image
 from autoposter.openrouter import generate_openrouter_post
 from autoposter.prompt import extract_system_prompt
 from autoposter.static_posts import load_static_post, render_static_post
@@ -29,6 +30,13 @@ def main(args) -> None:
         return
 
     logger.info("Autoposter started")
+    if settings.autopublish_interval_hours > 0:
+        interval_seconds = settings.autopublish_interval_hours * 60 * 60
+        while True:
+            run_once(settings, dry_run=args.dry_run, date_override=None)
+            logger.info("Next run in %s hour(s)", settings.autopublish_interval_hours)
+            time.sleep(interval_seconds)
+
     while True:
         now = datetime.now(ZoneInfo(settings.default_timezone))
         target = now.replace(
@@ -52,17 +60,28 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
         settings.validate_for_publish()
 
     timezone = ZoneInfo(settings.default_timezone)
-    target_date = parse_target_date(date_override, datetime.now(timezone).date())
 
     state = load_state(settings.state_path)
-    if not dry_run and str(target_date) in state.get("published", {}):
-        logger.info("Post for %s already published", target_date)
-        return
 
     entries = parse_plan(settings.content_plan_path)
-    entry = find_entry(entries, target_date)
+    if date_override:
+        target_date = parse_target_date(date_override, datetime.now(timezone).date())
+        if not dry_run and str(target_date) in state.get("published", {}):
+            logger.info("Post for %s already published", target_date)
+            return
+        entry = find_entry(entries, target_date)
+    elif settings.autopublish_interval_hours > 0:
+        entry = find_next_unpublished_entry(entries, state)
+        target_date = entry.publish_date if entry else None
+    else:
+        target_date = parse_target_date(None, datetime.now(timezone).date())
+        if not dry_run and str(target_date) in state.get("published", {}):
+            logger.info("Post for %s already published", target_date)
+            return
+        entry = find_entry(entries, target_date)
+
     if not entry:
-        logger.info("No content-plan entry for %s", target_date)
+        logger.info("No content-plan entry to publish")
         return
 
     logger.info("Preparing post for day %s: %s", entry.day, entry.title)
@@ -108,7 +127,20 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
 
     if dry_run:
         print(post_text)
+        image_path = build_post_image(entry, settings.image_output_dir)
+        if image_path:
+            print(f"\n[image] {image_path}")
         return
+
+    image_path = build_post_image(entry, settings.image_output_dir)
+    image_message_id = None
+    if image_path:
+        image_message_id = send_telegram_photo(
+            settings.telegram_bot_token,
+            settings.telegram_channel_id,
+            image_path,
+            caption=entry.title,
+        )
 
     message_ids = send_telegram_messages(
         settings.telegram_bot_token,
@@ -119,6 +151,7 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
     state.setdefault("published", {})[str(target_date)] = {
         "day": entry.day,
         "title": entry.title,
+        "image_message_id": image_message_id,
         "message_ids": message_ids,
         "published_at": datetime.now(timezone).isoformat(),
     }
@@ -166,6 +199,60 @@ def split_telegram_text(text: str, limit: int = 3900) -> list[str]:
     if current:
         chunks.append(current)
     return chunks
+
+
+def find_next_unpublished_entry(entries, state: dict):
+    published = set(state.get("published", {}).keys())
+    for entry in sorted(entries, key=lambda item: item.day):
+        if f"{entry.publish_date:%Y-%m-%d}" not in published:
+            return entry
+    return None
+
+
+def send_telegram_photo(
+    bot_token: str,
+    chat_id: str,
+    photo_path: Path,
+    caption: str,
+) -> int:
+    boundary = "----autoposter-boundary"
+    fields = {
+        "chat_id": chat_id,
+        "caption": caption[:1024],
+    }
+    body = bytearray()
+    for name, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        body.extend(str(value).encode("utf-8"))
+        body.extend(b"\r\n")
+
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(
+        (
+            f'Content-Disposition: form-data; name="photo"; filename="{photo_path.name}"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body.extend(photo_path.read_bytes())
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+        data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Telegram photo API error {exc.code}: {detail}") from exc
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram photo API error: {data}")
+    return int(data["result"]["message_id"])
 
 
 def send_telegram_messages(

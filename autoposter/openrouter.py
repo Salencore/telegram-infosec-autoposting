@@ -45,9 +45,10 @@ def generate_openrouter_post(
     choices = data.get("choices") or []
     if not choices:
         raise RuntimeError(f"OpenRouter response did not include choices: {data}")
-    text = choices[0].get("message", {}).get("content", "")
+    text = _extract_message_text(choices[0])
     if not text:
-        raise RuntimeError("OpenRouter response did not include message content")
+        preview = json.dumps(data, ensure_ascii=False)[:4000]
+        raise RuntimeError(f"OpenRouter response did not include message content: {preview}")
     return {
         "publish_date": f"{entry.publish_date:%Y-%m-%d}",
         "advent_day": entry.day,
@@ -74,7 +75,28 @@ def generate_openrouter_post(
     }
 
 
+def _extract_message_text(choice: dict) -> str:
+    message = choice.get("message") or {}
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("text"):
+                parts.append(str(item["text"]))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(parts)
+    for key in ("text", "reasoning"):
+        value = message.get(key) or choice.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
 def build_plain_telegram_prompt(entry: CalendarEntry, full_plan: str) -> str:
+    context = _short_plan_context(entry, full_plan)
     return f"""
 Напиши готовый Telegram-пост по записи контент-плана.
 
@@ -91,7 +113,7 @@ def build_plain_telegram_prompt(entry: CalendarEntry, full_plan: str) -> str:
 - экспертный, уверенный и вызывающий стиль;
 - цепляющий честный заголовок в первой строке;
 - используй хук в первом абзаце;
-- 1500-3900 знаков;
+- 1200-2800 знаков;
 - короткие абзацы;
 - практический вывод или чеклист;
 - мягкий CTA: подписаться на канал и проверить свои доступы сегодня;
@@ -99,6 +121,16 @@ def build_plain_telegram_prompt(entry: CalendarEntry, full_plan: str) -> str:
 - не выдумывай факты, цифры, кейсы, имена, ссылки и цитаты;
 - не давай пошаговые инструкции для атаки реальных систем, обхода защиты, кражи доступов или скрытия следов.
 
-Контент-план:
-{full_plan}
+Контекст:
+{context}
 """.strip()
+
+
+def _short_plan_context(entry: CalendarEntry, full_plan: str) -> str:
+    if entry.day == 0:
+        return "Это внеплановая тема. Не используй календарную очередь, пиши самостоятельный пост."
+    lines = []
+    for raw_line in full_plan.splitlines():
+        if f"| {entry.day} |" in raw_line or f"| {entry.day}|" in raw_line:
+            lines.append(raw_line.strip())
+    return "\n".join(lines) or "Используй только тему, формат и хук из текущего запроса."

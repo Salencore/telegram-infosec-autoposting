@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 def main(args) -> None:
     settings = Settings.from_env()
-    if args.once:
-        run_once(settings, dry_run=args.dry_run, date_override=args.date)
+    if args.once or args.topic:
+        run_once(settings, dry_run=args.dry_run, date_override=args.date, custom_topic=args.topic)
         return
 
     logger.info("Autoposter started")
@@ -50,10 +50,10 @@ def main(args) -> None:
         sleep_seconds = max(1, int((target - now).total_seconds()))
         logger.info("Next run at %s", target.isoformat())
         time.sleep(sleep_seconds)
-        run_once(settings, dry_run=args.dry_run, date_override=None)
+        run_once(settings, dry_run=args.dry_run, date_override=None, custom_topic=None)
 
 
-def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> None:
+def run_once(settings: Settings, dry_run: bool, date_override: str | None, custom_topic: str | None = None) -> None:
     if dry_run:
         settings.validate_for_generation()
     else:
@@ -62,9 +62,16 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
     timezone = ZoneInfo(settings.default_timezone)
 
     state = load_state(settings.state_path)
+    custom_entry = None
+    if custom_topic:
+        target_date = parse_target_date(date_override, datetime.now(timezone).date())
+        custom_entry = make_custom_entry(custom_topic, target_date)
 
     entries = parse_plan(settings.content_plan_path)
-    if date_override:
+    if custom_entry:
+        target_date = custom_entry.publish_date
+        entry = custom_entry
+    elif date_override:
         target_date = parse_target_date(date_override, datetime.now(timezone).date())
         if not dry_run and str(target_date) in state.get("published", {}):
             logger.info("Post for %s already published", target_date)
@@ -148,13 +155,18 @@ def run_once(settings: Settings, dry_run: bool, date_override: str | None) -> No
         split_telegram_text(post_text),
         disable_web_page_preview=bool(result and result.get("telegram_post", {}).get("disable_web_page_preview", False)),
     )
-    state.setdefault("published", {})[str(target_date)] = {
+    published_record = {
         "day": entry.day,
         "title": entry.title,
+        "custom_topic": bool(custom_entry),
         "image_message_id": image_message_id,
         "message_ids": message_ids,
         "published_at": datetime.now(timezone).isoformat(),
     }
+    if custom_entry:
+        state.setdefault("ad_hoc", []).append(published_record)
+    else:
+        state.setdefault("published", {})[str(target_date)] = published_record
     save_state(settings.state_path, state)
     logger.info("Published %s message(s) for %s", len(message_ids), target_date)
 
@@ -207,6 +219,19 @@ def find_next_unpublished_entry(entries, state: dict):
         if f"{entry.publish_date:%Y-%m-%d}" not in published:
             return entry
     return None
+
+
+def make_custom_entry(topic: str, target_date) -> object:
+    from autoposter.content_plan import CalendarEntry
+
+    clean_topic = topic.strip()
+    return CalendarEntry(
+        day=0,
+        publish_date=target_date,
+        title=clean_topic,
+        format="Текст",
+        hook=f"«{clean_topic}: почему это всплывает только после первого инцидента?»",
+    )
 
 
 def send_telegram_photo(

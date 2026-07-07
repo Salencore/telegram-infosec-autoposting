@@ -49,6 +49,18 @@ docker compose run --rm infosec-autoposter python -m autoposter --once --dry-run
 docker compose run --rm infosec-autoposter python -m autoposter --once --date 2026-07-06
 ```
 
+Сгенерировать и опубликовать пост на произвольную тему, не трогая очередь календаря:
+
+```bash
+docker compose run --rm infosec-autoposter python -m autoposter --topic "Почему пароль в заметках однажды сожжет бизнес"
+```
+
+Проверить произвольную тему без публикации:
+
+```bash
+docker compose run --rm infosec-autoposter python -m autoposter --topic "Почему пароль в заметках однажды сожжет бизнес" --dry-run
+```
+
 ## Docker запуск
 
 ```bash
